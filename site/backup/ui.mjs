@@ -1,4 +1,4 @@
-import {SCOPES,emptyDocument,capture,merge,materialize,validateDocument,units,same,sameEntries,GitHubStore} from './core.mjs';
+import {SCOPES,emptyDocument,capture,merge,materialize,validateDocument,units,same,sameEntries,GitHubStore} from './core.mjs?v=fetch-binding-v2';
 const META='zirui-github-backup:state:v1', AUTH='zirui-github-backup:credential:v1';
 const rawSet=Storage.prototype.setItem, rawRemove=Storage.prototype.removeItem;
 const base=new URL('../',import.meta.url);
