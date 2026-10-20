@@ -26,6 +26,12 @@ model=model.replace('if (!match.topics.length && research.phdEligible) {','if (f
 model=model.replace("if (type === 'Other') return null;",String.raw`if(type!=='Internship'||!/\b(?:intern(?:s|ship(?:s)?)?|co-?op|student researcher)\b/i.test(title+' '+(raw.type||'')))return null;`);
 model=model.replace('...match, research, excerpt:',"...match, research, us:isUS(location,raw.countries), priorityScore:(isUS(location,raw.countries)?1000:0)+(research.phdEligible?300:research.isResearch?150:0)+match.score, excerpt:");
 await writeFile(join(cwd,'model.mjs'),model);
+let adaptersText=await readFile(join(cwd,'adapters.mjs'),'utf8');
+const adapterAnchor='export async function collectSource(source) {';
+if(!adaptersText.includes(adapterAnchor))throw new Error('Upstream adapter changed');
+adaptersText=adaptersText.replace(adapterAnchor,"const requestOriginal=request;\nexport async function collectSource(source) {\nconst deadline=Date.now()+90000;\nconst request=(url,body)=>{if(Date.now()>deadline)throw new Error('Source time budget reached; coverage is partial');return requestOriginal(url,body);};");
+await writeFile(join(cwd,'adapters.mjs'),adaptersText);
+
 let sourcesText=await readFile(join(cwd,'sources.mjs'),'utf8');
 sourcesText=sourcesText.replace(/queries: \[[^\]]*\]/g,"queries: ['PhD intern','research intern','software engineering intern','reinforcement learning intern','AI security intern','program analysis intern']");
 await writeFile(join(cwd,'sources.mjs'),sourcesText);
