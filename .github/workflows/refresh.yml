@@ -2,10 +2,12 @@ name: Refresh internship feed
 on:
   schedule:
     - cron: '*/5 * * * *'
+  repository_dispatch:
+    types: [internship-feed-next]
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['refresh.mjs', '.github/workflows/refresh.yml']
+    paths: ['refresh.mjs', 'continuation.mjs', 'refresh-control.json', '.github/workflows/refresh.yml']
 permissions:
   contents: write
 concurrency:
@@ -14,15 +16,30 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Wait for the next collection time
+        id: pace
+        run: node continuation.mjs pace
+      # Queue before collection so a source outage cannot break the next tick.
+      # The concurrency group limits this chain to one running and one pending run.
+      - name: Queue the next automatic collection on GitHub
+        if: steps.pace.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REFRESH_STARTED_AT: ${{ steps.pace.outputs.started_at }}
+        run: node continuation.mjs queue
       - name: Collect official internship postings
+        if: steps.pace.outputs.enabled == 'true'
         run: node refresh.mjs
       - name: Publish feed and revision atomically
+        if: steps.pace.outputs.enabled == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
