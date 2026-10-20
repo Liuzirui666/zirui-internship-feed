@@ -1,0 +1,37 @@
+name: Refresh internship feed
+on:
+  schedule:
+    - cron: '3-59/5 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['refresh.mjs', '.github/workflows/refresh.yml']
+permissions:
+  contents: write
+concurrency:
+  group: internship-feed
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Collect official internship postings
+        run: node refresh.mjs
+      - name: Publish feed and revision atomically
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data.json manifest.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Refresh official internship feed'
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          exit 1
