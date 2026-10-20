@@ -11,8 +11,11 @@ async function install(dir){
     if(item.isDirectory()&&item.name!=='backup')await install(path);
     else if(item.isFile()&&/\.(html|js|mjs)$/.test(item.name)){
       let html=await readFile(path,'utf8');
-      const tag=`<script type="module" src="${base}backup/ui.mjs?v=github-private-v1"></script>`;
-      if(item.name.endsWith('.html')&&!html.includes('backup/ui.mjs'))html=html.includes('</head>')?html.replace('</head>',tag+'</head>'):tag+html;
+      const tag=`<script type="module" src="${base}backup/ui.mjs?v=github-private-v2"></script>`;
+      if(item.name.endsWith('.html')){
+        if(html.includes('backup/ui.mjs'))html=html.replace(/<script type="module" src="[^" ]*backup\/ui\.mjs[^" ]*"><\/script>/g,tag);
+        else html=html.includes('</head>')?html.replace('</head>',tag+'</head>'):tag+html;
+      }
       const replacements=[
         ['进展仅保存在此浏览器。关闭网页后仍保留，可导出备份或转移设备。','记录先保存在此浏览器。连接右下角 GitHub 备份后，自动备份到你的私有仓库。'],
         ['此浏览器自动保存 · 备份可转移到其他设备','此浏览器自动保存 · GitHub 备份状态见右下角'],
