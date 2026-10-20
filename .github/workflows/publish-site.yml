@@ -24,6 +24,8 @@ jobs:
         run: |
           cat site/website.part-*.b64 | base64 --decode > website.zip
           unzip -q website.zip -d website
+      - name: Install private progress backup controls
+        run: node site/backup/install.mjs website
       - uses: actions/upload-pages-artifact@v4
         with:
           path: website
