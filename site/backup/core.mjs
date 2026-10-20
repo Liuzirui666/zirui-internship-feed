@@ -116,7 +116,11 @@ export const encodeContent = text => {
 export const decodeContent = text => new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(text.replace(/\s/g,'')),c=>c.charCodeAt(0)));
 
 export class GitHubStore {
-  constructor({token,owner='Liuzirui666',repo='zirui-private-progress',fetcher=fetch}){this.token=token;this.owner=owner;this.repo=repo;this.fetcher=fetcher;}
+  constructor({token,owner='Liuzirui666',repo='zirui-private-progress',fetcher=globalThis.fetch}){
+    this.token=token;this.owner=owner;this.repo=repo;
+    // Native browser fetch rejects a GitHubStore receiver ("Illegal invocation").
+    this.fetcher=fetcher.bind(globalThis);
+  }
   async request(path,init={}) {
     const response=await this.fetcher(`https://api.github.com/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.repo)}${path}`,{...init,cache:'no-store',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000),headers:{Accept:'application/vnd.github+json','Authorization':`Bearer ${this.token}`,'X-GitHub-Api-Version':'2026-03-10',...(init.body?{'Content-Type':'application/json'}:{}),...init.headers}});
     if(response.status===401)throw new Error('GitHub 授权已失效。重新连接即可，云端记录仍保留。');
