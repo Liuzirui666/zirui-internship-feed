@@ -19,7 +19,7 @@ const RULES = {
 
 export function classify(title, description = '', department = '') {
   // Hiring AI researchers is not itself an AI research or engineering role.
-  if (/\b(?:recruit(?:er|ers|ing|ment)|talent acquisition)\b/i.test(title)) return { topics: [], evidence: [], score: 0 };
+  if (/\b(?:recruit(?:er|ers|ing|ment)|talent acquisition|finance|accounting|marketing|sales|human resources|legal|communications|procurement|supply chain|(?:product|project|program) manag(?:er|ement))\b/i.test(title)) return { topics: [], evidence: [], score: 0 };
   const body = cleanDescription(description);
   const heading = `${title} ${department}`;
   const text = `${heading}. ${body}`;
@@ -124,6 +124,34 @@ export function upgradeJob(job) {
   return {...job,classificationVersion:2,degree,research:{...research,degree},compensation:compensationFit(null),priorityScore:priorityOf({...job,degree,research})};
 }
 
+// Default results contain current recruiting windows, not undated multi-year standing adverts.
+export const MAX_UNDATED_COHORT_AGE_DAYS=180;
+const DAY=86400000;
+export function postingFreshness(job, now=Date.now()) {
+  const time=typeof now==='number'?now:Date.parse(now);
+  if(job.pipeline)return {eligible:false,code:'talent_pool',label:'人才库 · 非明确空缺'};
+  if(job.status!=='open')return {eligible:false,code:job.status==='not-listed'?'not_listed':'source_unverified',label:job.status==='not-listed'?'已不在最新官网列表':'当前官网收录未核实'};
+  const checked=Date.parse(job.lastSeen);
+  if(!Number.isFinite(checked)||time-checked>DAY)return {eligible:false,code:'verification_old',label:'官网收录核验已超过一天'};
+  const expires=Date.parse(job.expiresAt);
+  if(Number.isFinite(expires)&&expires<time)return {eligible:false,code:'deadline_passed',label:'官方截止日期已过'};
+  const title=String(job.title||''), years=[...title.matchAll(/\b(20\d{2})\b/g)].map(m=>({year:Number(m[1]),index:m.index}));
+  let cohortEnd=null;
+  for(const item of years){
+    const context=title.slice(Math.max(0,item.index-35),item.index+4);
+    const seasons=[...context.matchAll(/\b(spring|summer|fall|autumn|winter)\b/gi)].map(m=>m[1].toLowerCase());
+    const month=seasons.length?Math.max(...seasons.map(x=>({winter:11,spring:4,summer:8,fall:11,autumn:11}[x]))):11;
+    const end=Date.UTC(item.year,month+1,1)-1;cohortEnd=Math.max(cohortEnd??0,end);
+  }
+  if(cohortEnd!==null&&cohortEnd<time)return {eligible:false,code:'past_cohort',label:'标注的实习批次已结束',cohortEnd:new Date(cohortEnd).toISOString()};
+  const posted=Date.parse(job.postedAt);
+  if(Number.isFinite(posted)&&posted>time+DAY)return {eligible:false,code:'future_date',label:'来源发布日期异常'};
+  const ageDays=Number.isFinite(posted)?Math.max(0,Math.floor((time-posted)/DAY)):null;
+  if(ageDays!==null&&ageDays>MAX_UNDATED_COHORT_AGE_DAYS&&cohortEnd===null)return {eligible:false,code:'standing_old',label:'长期挂岗 · 当前批次未明确',ageDays};
+  return {eligible:true,code:cohortEnd!==null?'current_cohort':ageDays===null?'date_unknown':'recent_posting',label:cohortEnd!==null?'当前／未来实习批次':ageDays===null?'发布日期未提供 · 官网仍列出':'近期发布 · 官网仍列出',ageDays};
+}
+export const isCurrentOpportunity=(job,now=Date.now())=>postingFreshness(job,now).eligible;
+
 export function employmentType(title, type = '', description = '') {
   if (/\b(?:intern(?:s|ship(?:s)?)?|co-?op|student researcher|fellowship)\b|\b(?:AI|research|ML) residen(?:cy|t)\b/i.test(`${title} ${type}`)) return 'Internship';
   if (/contract|temporary|part[- ]?time|freelance/i.test(`${title} ${type}`)) return 'Other';
@@ -155,7 +183,7 @@ export function normalize(raw, source, now) {
     sourceId: source.id, company: source.name, tier: source.tier,
     title, location, type, typeInferred: type === 'Unspecified',
     us: isUS(location, raw.countries), department: plain(raw.department), url, applyUrl: safeURL(raw.applyUrl) || url,
-    postedAt: isoDate(raw.postedAt), sourceUpdatedAt: isoDate(raw.updatedAt),
+    postedAt: isoDate(raw.postedAt), expiresAt:isoDate(raw.validThrough||raw.expiresAt), sourceUpdatedAt: isoDate(raw.updatedAt),
     remote: /remote/i.test(`${location} ${raw.workplace || ''}`), pipeline: raw.pipeline === true,
     ...match, research, priorityScore: priorityOf({us:isUS(location,raw.countries),research,degree,score:match.score}), excerpt: description.slice(0, 480),
     firstSeen: now, lastSeen: now, status: 'open',
@@ -195,5 +223,5 @@ export function mergeSnapshot(previous, results, now) {
     };
   });
   return { schemaVersion: 1, updatedAt: now, refreshMinutes: 5, region: 'United States first · Internships only', sources,
-    jobs: [...current.values()].sort((a, b) => b.priorityScore - a.priorityScore || b.score - a.score || (b.postedAt || '').localeCompare(a.postedAt || '') ) };
+    jobs: [...current.values()].map(job=>({...job,freshness:postingFreshness(job,now)})).sort((a, b) => b.priorityScore - a.priorityScore || b.score - a.score || (b.postedAt || '').localeCompare(a.postedAt || '') ) };
 }
