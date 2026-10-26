@@ -32,5 +32,6 @@ async function install(dir){
     }
   }
 }
+await import('../radar/install.mjs');
 await install(target);
 console.log('Installed private GitHub backup controls.');
