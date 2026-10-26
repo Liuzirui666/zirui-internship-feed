@@ -31,7 +31,7 @@ const {mergeSnapshot}=await import(pathToFileURL(join(cwd,'model.mjs')));
 let previous;try{previous=JSON.parse(await readFile('data.json','utf8'));}catch{}
 const results=await pool(sources,4,async source=>{console.log('Scanning '+source.name);const r=await collectSource(source);console.log(source.name+': '+r.jobs.length+' rows; '+(r.complete?'complete':r.error));return r;});
 const snapshot=mergeSnapshot(previous,results,new Date().toISOString());
-snapshot.refreshMinutes=5;snapshot.region='US first; PhD-considerable internships only in the website';snapshot.classificationVersion=2;
+snapshot.refreshMinutes=5;snapshot.region='US first; PhD-considerable internships only in the website';snapshot.classificationVersion=2;snapshot.freshnessPolicy={version:1,maxUnspecifiedCohortAgeDays:180,sourceCheckMaxHours:24,defaultCurrentOnly:true};
 snapshot.scheduler={provider:'GitHub Actions',cadenceMinutes:5,runId:process.env.GITHUB_RUN_ID||null,repository:process.env.GITHUB_REPOSITORY||'Liuzirui666/zirui-internship-feed'};
 if(!snapshot.sources.some(s=>['ok','partial'].includes(s.status)))throw new Error('All sources failed; previous snapshot preserved');
 if(snapshot.jobs.some(j=>j.type!=='Internship'))throw new Error('Internship-only check failed');
