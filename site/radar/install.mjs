@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 const source=dirname(fileURLToPath(import.meta.url)),target=resolve(process.argv[2]);
 for(const name of ['app.js','matching.mjs'])await cp(join(source,name),join(target,'radar',name));
 const path=join(target,'radar/index.html');let html=await readFile(path,'utf8');
-html=html.replace(/app\.js\?v=[^" ]+/g,'app.js?v=coverage-v5');
+html=html.replace(/app\.js\?v=[^" ]+/g,'app.js?v=coverage-v6');
 html=html.replace(/<button id="tab-fulltime"[^>]*>[\s\S]*?<\/button>\s*/,'');
 html=html.replace('>All internships <span>','>全部 <span>').replace('>Research <span>','>研究 <span>').replace('>Engineering <span>','>工程 <span>');
 html=html.replace(/<label><input id="phd"[^>]*>[^<]*<\/label>/,'');
