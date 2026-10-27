@@ -19,7 +19,7 @@ const RULES = {
 
 export function classify(title, description = '', department = '') {
   // Hiring AI researchers is not itself an AI research or engineering role.
-  if (/\b(?:recruit(?:er|ers|ing|ment)|talent acquisition|finance|accounting|marketing|sales|human resources|legal|communications|procurement|supply chain|(?:product|project|program) manag(?:er|ement))\b/i.test(title)) return { topics: [], evidence: [], score: 0 };
+  if (/\b(?:recruit(?:er|ers|ing|ment)|talent acquisition|consult(?:ant|ing)|(?:business|revenue|category) operations|business development|finance|accounting|marketing|sales|human resources|legal|communications|procurement|supply chain|(?:product|project|program) manag(?:er|ement))\b/i.test(title)) return { topics: [], evidence: [], score: 0 };
   const body = cleanDescription(description);
   const heading = `${title} ${department}`;
   const text = `${heading}. ${body}`;
@@ -108,7 +108,7 @@ export function compensationFit(raw, description = '') {
   const summary=plain(raw?.compensationTierSummary||raw?.scrapeableCompensationSalarySummary||'');
   return {currency:null,period:null,min:null,max:null,label:summary||'薪资未公开',evidence:summary||'No comparable USD hourly rate was published. Annual, monthly and total-package amounts are not converted into hourly pay.'};
 }
-export const COMPANY_GROUPS = {big:['google','apple','microsoft','amazon','nvidia','meta','adobe','qualcomm','openai','anthropic','xai','scale','dolby']};
+export const COMPANY_GROUPS = {big:['google','apple','microsoft','amazon','nvidia','meta','adobe','qualcomm','openai','anthropic','xai','scale','dolby','databricks','samsung','salesforce','sony','snowflake','ibm','tiktok','bytedance']};
 export const companyCategory=job=>COMPANY_GROUPS.big.includes(job.sourceId)?'big':'small';
 export const PAY_FLOOR={hour:55,month:10000};
 export const competitivePay=job=>job.compensation?.currency==='USD' && Object.hasOwn(PAY_FLOOR,job.compensation.period) && job.compensation.min>=PAY_FLOOR[job.compensation.period];
