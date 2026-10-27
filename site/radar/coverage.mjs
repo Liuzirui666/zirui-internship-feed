@@ -19,13 +19,14 @@ export async function requestOfficial(url,body,extra={},options={}) {
 }
 function replaceRequired(text,before,after,label){if(!text.includes(before))throw new Error(`Upstream ${label} changed; previous feed preserved`);return text.replace(before,after);}
 export function patchAdapters(text){
-  text="import {requestOfficial,collectExtendedOfficial,INTERNSHIP} from './coverage.mjs';\n"+text;
+  text="import {requestOfficial,collectExtendedOfficial,collectMicrosoftFallback,INTERNSHIP} from './coverage.mjs';\n"+text;
   text=replaceRequired(text,"export async function request(url, body) {","export async function request(url, body) { return requestOfficial(url,body);\n/*",'request');
   text=replaceRequired(text,'export async function pool(items, limit, fn) {','*/}\nexport async function pool(items, limit, fn) {','request boundary');
   text=replaceRequired(text,'export async function collectSource(source) {',`export async function collectSource(source) {
   const deadline=Date.now()+240000;
   const request=(url,body,headers)=>{if(Date.now()>deadline)throw new Error('Source time budget reached; coverage is partial');return requestOfficial(url,body,headers);};
-  if(['ibm','tiktok','bytedance','workday'].includes(source.adapter))return collectExtendedOfficial(source,{request,pool});`,'collector');
+  if(['ibm','tiktok','bytedance','workday'].includes(source.adapter))return collectExtendedOfficial(source,{request,pool});
+  if(source.id==='microsoft'&&source.adapter==='eightfold'){const primary=await collectPublicCareers(source,{request,pool});return primary.complete?primary:collectMicrosoftFallback(source,primary,{request,pool,parseMSR});}`,'collector');
   text=replaceRequired(text,'job-board/${source.board}','job-board/${encodeURIComponent(source.board)}?includeCompensation=true','Ashby compensation');
   text=replaceRequired(text,'type: j.employmentType, workplace:','compensation:j.compensation, type: j.employmentType, workplace:','Ashby fields');
   text=replaceRequired(text,'await pool([...listings.values()], 4,','await pool([...listings.values()].filter(j=>INTERNSHIP.test(j.title)), 2,','Workday details');
@@ -110,4 +111,34 @@ export async function collectExtendedOfficial(source,{request,pool}){
     }
   }catch(e){issues.push(e.message);}
   return {source,jobs,scanned,complete:!issues.length,error:issues.join('; ')};
+}
+export function parseOfficialJobPosting(html,listing){
+  let posting;
+  for(const match of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){
+    try{const value=JSON.parse(match[1]);const rows=Array.isArray(value)?value:value['@graph']||[value];posting||=rows.find(j=>j['@type']==='JobPosting');}catch{}
+  }
+  if(!posting?.title||!posting.description||/this (?:job|position) is no longer available|this position has been filled/i.test(html))throw new Error('Official job page no longer provides a current posting');
+  const loc=Array.isArray(posting.jobLocation)?posting.jobLocation:[posting.jobLocation].filter(Boolean);
+  return {id:listing.id||listing.url.match(/\/job\/(\d+)/)?.[1],title:posting.title,description:posting.description,location:loc.map(l=>l.name||[l.address?.addressLocality,l.address?.addressRegion,l.address?.addressCountry].filter(Boolean).join(', ')).join('; '),countries:loc.map(l=>l.address?.addressCountry),type:posting.employmentType,postedAt:posting.datePosted,expiresAt:posting.validThrough,url:listing.url};
+}
+export async function collectMicrosoftFallback(source,primary,{request,pool,parseMSR}){
+  const candidates=new Map(),jobs=new Map((primary.jobs||[]).map(j=>[j.id,j]));let boardComplete=false,boardError='',scanned=primary.scanned||0;
+  for(const j of source.previousJobs||[])if(INTERNSHIP.test(j.title))candidates.set(j.url,{...j,id:j.id.replace(/^microsoft:/,'')});
+  try{
+    let url='https://www.microsoft.com/en-us/research/careers/open-positions/?sort_by=most-recent';const pages=new Set();let count=0;
+    while(url&&count++<30){
+      if(pages.has(url))throw new Error('MSR pagination repeated');pages.add(url);
+      const result=parseMSR(await(await request(url)).text());
+      if(!result.jobs.length)throw new Error('MSR public board temporarily unavailable');scanned+=result.jobs.length;
+      for(const j of result.jobs)if(INTERNSHIP.test(j.title))candidates.set(j.url,{...j,id:j.url.match(/\/job\/(\d+)/)?.[1]});
+      url=result.next?new URL(result.next,url).href:null;
+    }
+    if(url)throw new Error('MSR page limit reached');boardComplete=true;
+  }catch(e){boardError=e.message;}
+  let checked=0,failed=0;
+  await pool([...candidates.values()].slice(0,100),2,async j=>{try{const raw=parseOfficialJobPosting(await(await request(j.url)).text(),j);jobs.set(raw.id,raw);checked++;}catch{failed++;}});
+  // Successful detail checks establish availability for those exact postings. They
+  // never establish that a failed company-wide search discovered every new role.
+  const coverage=`Microsoft primary careers search limited: ${primary.error||'incomplete'}. ${checked} official posting pages reverified; ${boardComplete?'MSR research board checked; broader discovery remains partial.':boardError+'.'}${failed?' '+failed+' detail checks unavailable.':''}`;
+  return {source,jobs:[...jobs.values()],scanned,complete:false,error:coverage};
 }
