@@ -8,7 +8,10 @@ export async function requestOfficial(url,body,extra={},options={}) {
     const response=await fetcher(url,{method:body?'POST':'GET',headers:{'user-agent':'Mozilla/5.0',accept:'application/json,text/html;q=0.9,*/*;q=0.8',...(body?{'content-type':'application/json'}:{}),...extra},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(30000)});
     if(response.ok)return response;
     const supplierSearch=/^https:\/\/(?:api\.lifeattiktok\.com|jobs\.bytedance\.com)\/api\/v1\/public\/supplier\/search\/job\/posts/.test(String(url));
-    if(!([429,500,502,503,504].includes(response.status)||(response.status===400&&supplierSearch))||attempt===3)throw new Error(`Official source returned HTTP ${response.status} after ${attempt+1} attempt(s)`);
+    if(!([429,500,502,503,504].includes(response.status)||(response.status===400&&supplierSearch))||attempt===3){
+      let reason='';try{const d=await response.clone().json();reason=String(d.message||d.msg||d.error?.message||'').slice(0,180);}catch{}
+      throw new Error(`Official source returned HTTP ${response.status} after ${attempt+1} attempt(s)${reason?': '+reason:''}`);
+    }
     const retry=Number(response.headers.get('retry-after'));
     await response.body?.cancel();
     await sleep(Math.min(30000,Math.max(1500*2**attempt,Number.isFinite(retry)?retry*1000:0)));
@@ -90,7 +93,7 @@ export async function collectExtendedOfficial(source,{request,pool}){
       if(offset<total)throw new Error('IBM page limit reached; coverage is partial');
     }else{
       const base=source.adapter==='tiktok'?'https://api.lifeattiktok.com/api/v1/public/supplier':'https://jobs.bytedance.com/api/v1/public/supplier';
-      const headers={'accept-language':'en-US','website-path':source.adapter==='tiktok'?'tiktok':'en'};
+      const headers={'accept-language':'en-US','website-path':source.adapter==='tiktok'?'tiktok':'en',origin:source.adapter==='tiktok'?'https://lifeattiktok.com':'https://joinbytedance.com'};
       // IDs 202 and 301 are the official site's Intern filter (not Campus graduates).
       // Filtering at the API avoids paging through thousands of full-time keyword matches.
       let offset=0,total=Infinity;
