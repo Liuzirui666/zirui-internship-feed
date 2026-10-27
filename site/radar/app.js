@@ -1,4 +1,4 @@
-import { withinScope, companyCategory, matchesTrack, upgradeJob, postingFreshness, isCurrentOpportunity } from './matching.mjs?v=coverage-v5';
+import { withinScope, companyCategory, matchesTrack, upgradeJob, postingFreshness, isCurrentOpportunity } from './matching.mjs?v=coverage-v6';
 import { createFeedClient } from './feed-client.js?v=progress-v2';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
