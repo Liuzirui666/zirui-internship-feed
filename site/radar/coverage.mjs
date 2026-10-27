@@ -7,7 +7,8 @@ export async function requestOfficial(url,body,extra={},options={}) {
   for(let attempt=0;attempt<4;attempt++){
     const response=await fetcher(url,{method:body?'POST':'GET',headers:{'user-agent':'Mozilla/5.0',accept:'application/json,text/html;q=0.9,*/*;q=0.8',...(body?{'content-type':'application/json'}:{}),...extra},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(30000)});
     if(response.ok)return response;
-    if(![429,500,502,503,504].includes(response.status)||attempt===3)throw new Error(`Official source returned HTTP ${response.status} after ${attempt+1} attempt(s)`);
+    const supplierSearch=/^https:\/\/(?:api\.lifeattiktok\.com|jobs\.bytedance\.com)\/api\/v1\/public\/supplier\/search\/job\/posts/.test(String(url));
+    if(!([429,500,502,503,504].includes(response.status)||(response.status===400&&supplierSearch))||attempt===3)throw new Error(`Official source returned HTTP ${response.status} after ${attempt+1} attempt(s)`);
     const retry=Number(response.headers.get('retry-after'));
     await response.body?.cancel();
     await sleep(Math.min(30000,Math.max(1500*2**attempt,Number.isFinite(retry)?retry*1000:0)));
@@ -90,14 +91,17 @@ export async function collectExtendedOfficial(source,{request,pool}){
     }else{
       const base=source.adapter==='tiktok'?'https://api.lifeattiktok.com/api/v1/public/supplier':'https://jobs.bytedance.com/api/v1/public/supplier';
       const headers={'accept-language':'en-US','website-path':source.adapter==='tiktok'?'tiktok':'en'};
+      // IDs 202 and 301 are the official site's Intern filter (not Campus graduates).
+      // Filtering at the API avoids paging through thousands of full-time keyword matches.
       let offset=0,total=Infinity;
       while(offset<total&&offset<20000){
-        const data=await(await request(base+'/search/job/posts',{keyword:'intern',limit:100,offset},headers)).json();
+        const data=await(await request(base+'/search/job/posts',{keyword:'',recruitment_id_list:['202','301'],limit:100,offset},headers)).json();
         const rows=data.data?.job_post_list;total=data.data?.count;
         if(data.code!==0||!Array.isArray(rows)||!Number.isFinite(total))throw new Error('Official supplier search format changed');
         const ids=rows.map(r=>r.id).join(',');if((!rows.length&&offset<total)||(ids&&visited.has(ids)))throw new Error('Official supplier pagination repeated or ended early');visited.add(ids);
         scanned+=rows.length;for(const row of rows)if(INTERNSHIP.test(row.title+' '+row.recruit_type?.en_name))jobs.push(parseSupplierJob(row,source));
         offset+=rows.length;
+        if(offset<total)await delay(600);
       }
       if(offset<total)throw new Error('Official supplier page limit reached; coverage is partial');
     }
