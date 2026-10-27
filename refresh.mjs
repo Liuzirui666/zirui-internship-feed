@@ -11,27 +11,19 @@ const cwd=join(dir,'jobs-source');
 execFileSync('npm',['ci','--omit=dev','--no-audit','--no-fund'],{cwd,stdio:'inherit'});
 // One owned matching model is shared by the collector and the browser.
 await writeFile(join(cwd,'model.mjs'),await readFile(new URL('./site/radar/matching.mjs',import.meta.url),'utf8'));
-let adaptersText=await readFile(join(cwd,'adapters.mjs'),'utf8');
-const adapterAnchor='export async function collectSource(source) {';
-if(!adaptersText.includes(adapterAnchor))throw new Error('Upstream adapter changed');
-adaptersText=adaptersText.replace(adapterAnchor,"const requestOriginal=request;\nexport async function collectSource(source) {\nconst deadline=Date.now()+90000;\nconst request=(url,body)=>{if(Date.now()>deadline)throw new Error('Source time budget reached; coverage is partial');return requestOriginal(url,body);};");
-if(!adaptersText.includes('job-board/${source.board}')||!adaptersText.includes('type: j.employmentType, workplace:'))throw new Error('Upstream compensation adapter changed; preserving previous feed');
-adaptersText=adaptersText.replace('job-board/${source.board}', 'job-board/${encodeURIComponent(source.board)}?includeCompensation=true');
-adaptersText=adaptersText.replace('type: j.employmentType, workplace:', 'compensation:j.compensation, type: j.employmentType, workplace:');
-await writeFile(join(cwd,'adapters.mjs'),adaptersText);
-
-let sourcesText=await readFile(join(cwd,'sources.mjs'),'utf8');
-sourcesText=sourcesText.replace(/queries: \[[^\]]*\]/g,"queries: ['PhD intern','research intern','software engineering intern','reinforcement learning intern','AI security intern','program analysis intern']");
-await writeFile(join(cwd,'sources.mjs'),sourcesText);
+const {patchAdapters,patchPublicCareers,queriesFor}=await import('./site/radar/coverage.mjs');
+await writeFile(join(cwd,'coverage.mjs'),await readFile(new URL('./site/radar/coverage.mjs',import.meta.url),'utf8'));
+await writeFile(join(cwd,'adapters.mjs'),patchAdapters(await readFile(join(cwd,'adapters.mjs'),'utf8')));
+await writeFile(join(cwd,'public-careers.mjs'),patchPublicCareers(await readFile(join(cwd,'public-careers.mjs'),'utf8')));
 const {sources:originalSources}=await import(pathToFileURL(join(cwd,'sources.mjs')));
 const {additionalSources}=await import('./site/radar/sources.mjs');
-const sources=[...originalSources,...additionalSources.filter(s=>!originalSources.some(o=>o.id===s.id))];
+const sources=[...originalSources,...additionalSources.filter(s=>!originalSources.some(o=>o.id===s.id))].map(s=>({...s,...(s.queries?{queries:queriesFor(s)}:{})}));
 const {collectSource,pool}=await import(pathToFileURL(join(cwd,'adapters.mjs')));
 const {mergeSnapshot}=await import(pathToFileURL(join(cwd,'model.mjs')));
 let previous;try{previous=JSON.parse(await readFile('data.json','utf8'));}catch{}
 const results=await pool(sources,4,async source=>{console.log('Scanning '+source.name);const r=await collectSource(source);console.log(source.name+': '+r.jobs.length+' rows; '+(r.complete?'complete':r.error));return r;});
 const snapshot=mergeSnapshot(previous,results,new Date().toISOString());
-snapshot.refreshMinutes=5;snapshot.region='US first; PhD-considerable internships only in the website';snapshot.classificationVersion=2;snapshot.freshnessPolicy={version:1,maxUnspecifiedCohortAgeDays:180,sourceCheckMaxHours:24,defaultCurrentOnly:true};
+snapshot.refreshMinutes=5;snapshot.region='US first; PhD-considerable internships only in the website';snapshot.classificationVersion=2;snapshot.coverageVersion=3;snapshot.freshnessPolicy={version:1,maxUnspecifiedCohortAgeDays:180,sourceCheckMaxHours:24,defaultCurrentOnly:true};
 snapshot.scheduler={provider:'GitHub Actions',cadenceMinutes:5,runId:process.env.GITHUB_RUN_ID||null,repository:process.env.GITHUB_REPOSITORY||'Liuzirui666/zirui-internship-feed'};
 if(!snapshot.sources.some(s=>['ok','partial'].includes(s.status)))throw new Error('All sources failed; previous snapshot preserved');
 if(snapshot.jobs.some(j=>j.type!=='Internship'))throw new Error('Internship-only check failed');
