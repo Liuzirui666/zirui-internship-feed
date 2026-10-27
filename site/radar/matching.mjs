@@ -19,7 +19,7 @@ const RULES = {
 
 export function classify(title, description = '', department = '') {
   // Hiring AI researchers is not itself an AI research or engineering role.
-  if (/\b(?:recruit(?:er|ers|ing|ment)|talent acquisition|consult(?:ant|ing)|(?:business|revenue|category) operations|business development|finance|accounting|marketing|sales|human resources|legal|communications|procurement|supply chain|(?:product|project|program) manag(?:er|ement))\b/i.test(title)) return { topics: [], evidence: [], score: 0 };
+  if (/\b(?:recruit(?:er|ers|ing|ment)|talent acquisition|copywrit\w*|designer|(?:product|UX|brand|visual) design|consult(?:ant|ing)|(?:business|revenue|category) operations|business development|finance|accounting|marketing|sales|human resources|legal|communications|procurement|supply chain|(?:product|project|program) manag(?:er|ement))\b/i.test(title)) return { topics: [], evidence: [], score: 0 };
   const body = cleanDescription(description);
   const heading = `${title} ${department}`;
   const text = `${heading}. ${body}`;
@@ -37,7 +37,11 @@ export function classify(title, description = '', department = '') {
     const index = match.index || 0;
     evidence.push({ topic, term: match[0], excerpt: text.slice(Math.max(0, index - 65), index + 200).trim() });
   }
-  if (!topics.length && ai && /\b(?:research(?:er)?|scien(?:tist|ce)|student researcher|intern(?:s|ship(?:s)?)?|fellow(?:ship)?|residen(?:cy|t))\b/i.test(title)) {
+  // Company introductions mentioning AI are not evidence that a copywriting,
+  // hardware or general business internship involves machine learning.
+  const technicalTitle=/\b(?:research(?:er)?|scien(?:tist|ce)|engineer(?:ing)?|developer|AI|ML|NLP|data science)\b/i.test(title);
+  const concreteML=/\b(?:LLMs?|VLMs?|machine learning|deep learning|language models?|foundation models?|neural networks?|generative (?:AI|models?)|reinforcement learning)\b/i;
+  if (!topics.length && ai && technicalTitle && (AI.test(heading)||concreteML.test(body))) {
     topics.push('ML Research');
     evidence.push({ topic: 'ML Research', term: 'Related AI research', excerpt: text.slice(0, 250) });
   }
