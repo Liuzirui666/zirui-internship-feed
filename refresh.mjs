@@ -21,7 +21,7 @@ const sources=[...originalSources,...additionalSources.filter(s=>!originalSource
 const {collectSource,pool}=await import(pathToFileURL(join(cwd,'adapters.mjs')));
 const {mergeSnapshot}=await import(pathToFileURL(join(cwd,'model.mjs')));
 let previous;try{previous=JSON.parse(await readFile('data.json','utf8'));}catch{}
-const results=await pool(sources,4,async source=>{console.log('Scanning '+source.name);const r=await collectSource(source);console.log(source.name+': '+r.jobs.length+' rows; '+(r.complete?'complete':r.error));return r;});
+const results=await pool(sources,4,async source=>{console.log('Scanning '+source.name);const r=await collectSource(source.id==='microsoft'?{...source,previousJobs:(previous?.jobs||[]).filter(j=>j.sourceId==='microsoft'&&!['other_degree','restricted'].includes(j.degree?.status))}:source);console.log(source.name+': '+r.jobs.length+' rows; '+(r.complete?'complete':r.error));return r;});
 const snapshot=mergeSnapshot(previous,results,new Date().toISOString());
 snapshot.refreshMinutes=5;snapshot.region='US first; PhD-considerable internships only in the website';snapshot.classificationVersion=2;snapshot.coverageVersion=3;snapshot.freshnessPolicy={version:1,maxUnspecifiedCohortAgeDays:180,sourceCheckMaxHours:24,defaultCurrentOnly:true};
 snapshot.scheduler={provider:'GitHub Actions',cadenceMinutes:5,runId:process.env.GITHUB_RUN_ID||null,repository:process.env.GITHUB_REPOSITORY||'Liuzirui666/zirui-internship-feed'};
