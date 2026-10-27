@@ -21,7 +21,7 @@ export function patchAdapters(text){
   text=replaceRequired(text,'export async function collectSource(source) {',`export async function collectSource(source) {
   const deadline=Date.now()+240000;
   const request=(url,body,headers)=>{if(Date.now()>deadline)throw new Error('Source time budget reached; coverage is partial');return requestOfficial(url,body,headers);};
-  if(['ibm','tiktok','bytedance'].includes(source.adapter))return collectExtendedOfficial(source,{request,pool});`,'collector');
+  if(['ibm','tiktok','bytedance','workday'].includes(source.adapter))return collectExtendedOfficial(source,{request,pool});`,'collector');
   text=replaceRequired(text,'job-board/${source.board}','job-board/${encodeURIComponent(source.board)}?includeCompensation=true','Ashby compensation');
   text=replaceRequired(text,'type: j.employmentType, workplace:','compensation:j.compensation, type: j.employmentType, workplace:','Ashby fields');
   text=replaceRequired(text,'await pool([...listings.values()], 4,','await pool([...listings.values()].filter(j=>INTERNSHIP.test(j.title)), 2,','Workday details');
@@ -43,7 +43,39 @@ export function parseSupplierJob(j,source){
 export async function collectExtendedOfficial(source,{request,pool}){
   const jobs=[],issues=[],visited=new Set();let scanned=0;
   try{
-    if(source.adapter==='ibm'){
+    if(source.adapter==='workday'){
+      const base=`https://${source.host}/wday/cxs/${source.tenant}/${source.board}`;
+      const initial=await(await request(base+'/jobs',{limit:20,offset:0,searchText:'intern',appliedFacets:{}})).json();
+      if(!Array.isArray(initial.jobPostings)||!Number.isFinite(initial.total))throw new Error('Workday search format changed');
+      // Workday reports total=0 after page one. Preserve the first total.
+      // An official Intern worker-type facet avoids matching "internal" in full-time descriptions.
+      const facet=initial.facets?.find(f=>f.facetParameter==='workerSubType'&&f.values?.some(v=>/^intern(?:ship)?(?:\s|\(|$)/i.test(v.descriptor)));
+      const internTypes=facet?.values.filter(v=>/^intern(?:ship)?(?:\s|\(|$)/i.test(v.descriptor)).map(v=>v.id);
+      const queries=internTypes?.length?['']:['internship','intern'];
+      const appliedFacets=internTypes?.length?{[facet.facetParameter]:internTypes}:{};
+      const listings=new Map();
+      for(const query of queries){
+        let offset=0,total=Infinity;const pages=new Set();
+        while(offset<total&&offset<20000){
+          const data=await(await request(base+'/jobs',{limit:20,offset,searchText:query,appliedFacets})).json();
+          if(!Array.isArray(data.jobPostings)||!Number.isFinite(data.total))throw new Error('Workday search format changed');
+          total=offset===0?data.total:Math.max(total,data.total);
+          const ids=data.jobPostings.map(j=>j.externalPath).join(',');
+          if((!data.jobPostings.length&&offset<total)||(ids&&pages.has(ids)))throw new Error('Workday pagination repeated or ended early');pages.add(ids);
+          for(const j of data.jobPostings)listings.set(j.externalPath,j);
+          offset+=data.jobPostings.length;
+        }
+        if(offset<total)throw new Error('Workday page limit reached; coverage is partial');
+      }
+      scanned=listings.size;
+      await pool([...listings.values()].filter(j=>INTERNSHIP.test(j.title)),2,async j=>{
+        try{
+          const data=await(await request(base+j.externalPath)).json(),d=data.jobPostingInfo;
+          if(!d?.jobDescription||!d.title)throw new Error('Workday qualifications unavailable');
+          jobs.push({id:d.jobReqId||j.bulletFields?.[0],title:d.title,location:[d.location,...(d.additionalLocations||[])].filter(Boolean).join('; '),countries:[d.country?.descriptor],description:d.jobDescription,type:`${d.timeType||''} ${d.workerSubType||''}`,postedAt:d.startDate,url:d.externalUrl||`https://${source.host}/en-US/${source.board}${j.externalPath}`});
+        }catch(e){issues.push(e.message);}
+      });
+    }else if(source.adapter==='ibm'){
       let offset=0,total=Infinity;
       while(offset<total && offset<20000){
         const data=await(await request('https://www-api.ibm.com/search/api/v2',{appId:'careers',scopes:['careers2'],query:{bool:{must:[]}},size:100,from:offset,_source:['title','url','body','description','field_keyword_05','field_keyword_18','field_keyword_19']})).json();
