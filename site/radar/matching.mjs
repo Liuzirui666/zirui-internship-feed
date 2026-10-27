@@ -200,19 +200,20 @@ export function mergeSnapshot(previous, results, now) {
   const current = new Map();
   const sources = results.map(({ source, jobs, complete, error, scanned }) => {
     const oldSource = previous?.sources?.find(s => s.id === source.id);
+    const observedOutsideScope=new Set();
     for (const raw of jobs) {
       const job = normalize(raw, source, now);
-      if (!job) continue;
+      if (!job) {const url=safeURL(raw.url);if(url)observedOutsideScope.add(`${source.id}:${raw.id || encodeURIComponent(url.split('?')[0]).slice(-120)}`);continue;}
       const old = oldJobs.get(job.id);
       current.set(job.id, { ...job, firstSeen: old?.firstSeen || now, missingSince: null });
     }
     const found = [...current.values()].filter(j => j.sourceId === source.id).length;
     // A sudden empty/reduced response may be a parser change, never a mass closure.
-    const oldCount = [...oldJobs.values()].filter(j => j.sourceId === source.id && j.status === 'open').length;
+    const oldCount = [...oldJobs.values()].filter(j => j.sourceId === source.id && j.status === 'open' && !observedOutsideScope.has(j.id)).length;
     const suspicious = complete && oldCount >= 5 && found < oldCount * 0.35;
     const trustworthy = complete && !error && !suspicious;
     for (const old of oldJobs.values()) {
-      if (old.sourceId !== source.id || current.has(old.id)) continue;
+      if (old.sourceId !== source.id || current.has(old.id) || observedOutsideScope.has(old.id)) continue;
       if (trustworthy) {
         const missingSince = old.missingSince || now;
         if (Date.parse(now) - Date.parse(missingSince) < 30 * 86400000) current.set(old.id, { ...upgradeJob(old), status: 'not-listed', missingSince });
