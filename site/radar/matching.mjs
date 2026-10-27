@@ -110,7 +110,7 @@ export function compensationFit(raw, description = '') {
 }
 export const COMPANY_GROUPS = {big:['google','apple','microsoft','amazon','nvidia','meta','adobe','qualcomm','openai','anthropic','xai','scale','dolby']};
 export const companyCategory=job=>COMPANY_GROUPS.big.includes(job.sourceId)?'big':'small';
-export const PAY_FLOOR={hour:60,month:10000};
+export const PAY_FLOOR={hour:55,month:10000};
 export const competitivePay=job=>job.compensation?.currency==='USD' && Object.hasOwn(PAY_FLOOR,job.compensation.period) && job.compensation.min>=PAY_FLOOR[job.compensation.period];
 export const withinScope=job=>acceptsPhD(job)&&(companyCategory(job)==='big'||competitivePay(job));
 export const matchesTrack=(job,type)=>type==='Research'?!!job.research?.isResearch:type==='Engineering'?(job.research?.isEngineering??!job.research?.isResearch):type==='BigCompanies'?companyCategory(job)==='big':type==='SmallCompanies'?companyCategory(job)==='small':true;
