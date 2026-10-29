@@ -40,8 +40,9 @@ export function classify(title, description = '', department = '') {
   // Company introductions mentioning AI are not evidence that a copywriting,
   // hardware or general business internship involves machine learning.
   const technicalTitle=/\b(?:research(?:er)?|scien(?:tist|ce)|engineer(?:ing)?|developer|AI|ML|NLP|data science)\b/i.test(title);
+  const manufacturingTitle=/\b(?:module engineer(?:ing)?|process integration|yield engineering|wet etch|chemical engineer(?:ing)?|materials engineer(?:ing)?)\b/i.test(title);
   const concreteML=/\b(?:LLMs?|VLMs?|machine learning|deep learning|language models?|foundation models?|neural networks?|generative (?:AI|models?)|reinforcement learning)\b/i;
-  if (!topics.length && ai && technicalTitle && (AI.test(heading)||concreteML.test(body))) {
+  if (!topics.length && ai && technicalTitle && (!manufacturingTitle||AI.test(heading)) && (AI.test(heading)||concreteML.test(body))) {
     topics.push('ML Research');
     evidence.push({ topic: 'ML Research', term: 'Related AI research', excerpt: text.slice(0, 250) });
   }
@@ -74,7 +75,7 @@ export function degreeFit(title, description = '') {
     if (/^(?:preferred qualifications?|nice to have|bonus qualifications?|desired qualifications?)\b/i.test(line)) section='preferred';
     else if (/^(?:required qualifications?|minimum qualifications?|requirements?|what we(?:[’']re| are) looking for|qualifications)\b/i.test(line)) section='required';
     else if (/^(?:responsibilities|what you(?:[’']ll| will) do|about (?:us|the role)|benefits|compensation)/i.test(line)) section='unknown';
-    if (!PHD.test(line) || !STUDY.test(line) || /(?:mentors?|team|colleagues?|researchers?).{0,35}(?:with|hold|have)|no PhD|PhD (?:is )?not required|not (?:currently )?pursuing (?:a )?PhD/i.test(line)) continue;
+    if (!PHD.test(line) || !STUDY.test(line) || /(?:mentors?|team|colleagues?|researchers?).{0,35}(?:with|hold|have)|no PhD|PhD (?:is )?not required|not (?:currently )?pursuing (?:a )?PhD|whether you(?:[’']re| are) (?:an? )?undergrad|skills shortage roles|STEM positions requiring/i.test(line)) continue;
     let status = PREF.test(line) || section==='preferred' ? 'phd_preferred'
       : LOWER.test(line) || /or equivalent (?:experience|practical)/i.test(line) ? 'phd_accepted'
       : /currently|pursu\w*|enroll\w*|must|require\w*|current PhD|PhD (?:students?|candidates?)|obtaining|working toward/i.test(line) || section==='required' ? 'phd_required' : 'phd_accepted';
@@ -112,12 +113,15 @@ export function compensationFit(raw, description = '') {
   const summary=plain(raw?.compensationTierSummary||raw?.scrapeableCompensationSalarySummary||'');
   return {currency:null,period:null,min:null,max:null,label:summary||'薪资未公开',evidence:summary||'No comparable USD hourly rate was published. Annual, monthly and total-package amounts are not converted into hourly pay.'};
 }
-export const COMPANY_GROUPS = {big:['google','apple','microsoft','amazon','nvidia','meta','adobe','qualcomm','openai','anthropic','xai','scale','dolby','databricks','samsung','salesforce','sony','snowflake','ibm','tiktok','bytedance']};
+export const COMPANY_GROUPS = {big:['google','apple','microsoft','amazon','nvidia','meta','adobe','qualcomm','openai','anthropic','xai','scale','dolby','databricks','samsung','salesforce','sony','snowflake','ibm','tiktok','bytedance','hp','hpe','bosch','intel','cisco','amd']};
+// A curated employer view, independent of role type and company size. All jobs
+// still pass the shared subject, degree, freshness and small-company pay rules.
+export const INDUSTRY_LABS = ['hp','hpe','bosch','intel','cisco','amd','ibm','qualcomm','adobe','samsung','sony','dolby','together','cohere','mistral','ai2','thinkingmachines','reflection','imbue','datologyai','primeintellect','grayswan','patronus','physicalintelligence','modal','perplexity','hume','sesame'];
 export const companyCategory=job=>COMPANY_GROUPS.big.includes(job.sourceId)?'big':'small';
 export const PAY_FLOOR={hour:55,month:10000};
 export const competitivePay=job=>job.compensation?.currency==='USD' && Object.hasOwn(PAY_FLOOR,job.compensation.period) && job.compensation.min>=PAY_FLOOR[job.compensation.period];
 export const withinScope=job=>acceptsPhD(job)&&(companyCategory(job)==='big'||competitivePay(job));
-export const matchesTrack=(job,type)=>type==='Research'?!!job.research?.isResearch:type==='Engineering'?(job.research?.isEngineering??!job.research?.isResearch):type==='BigCompanies'?companyCategory(job)==='big':type==='SmallCompanies'?companyCategory(job)==='small':true;
+export const matchesTrack=(job,type)=>type==='Research'?!!job.research?.isResearch:type==='Engineering'?(job.research?.isEngineering??!job.research?.isResearch):type==='BigCompanies'?companyCategory(job)==='big':type==='SmallCompanies'?companyCategory(job)==='small':type==='IndustryLabs'?INDUSTRY_LABS.includes(job.sourceId):true;
 export const acceptsPhD=job=>!['other_degree','restricted'].includes(job.degree?.status);
 export const matchesPay=(job,floor)=>!floor || job.compensation?.currency==='USD' && job.compensation.period==='hour' && job.compensation.min>=Number(floor);
 export function priorityOf(job) {return (job.us?1000:0)+(job.research?.isResearch?({phd_required:500,phd_preferred:400,phd_accepted:300}[job.degree?.status]||200):0)+(job.score||0);}
