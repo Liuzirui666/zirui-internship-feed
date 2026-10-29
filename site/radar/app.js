@@ -1,4 +1,4 @@
-import { withinScope, companyCategory, matchesTrack, upgradeJob, postingFreshness, isCurrentOpportunity } from './matching.mjs?v=industry-labs-v7';
+import { withinScope, companyCategory, COMPANY_LABELS, matchesTrack, upgradeJob, postingFreshness, isCurrentOpportunity } from './matching.mjs?v=company-categories-v8';
 import { createFeedClient } from './feed-client.js?v=progress-v2';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -6,7 +6,7 @@ const safeLink = value => { try { const u = new URL(value); return u.protocol ==
 const STORE = 'zirui-internship-radar:v1';
 import { STAGES, stageOf, validateRecords, emptyRecord, updateRecord, mergeRecords, trackedJobs, hasApplied, activeInterview, finished } from './tracker-state.mjs';
 const topicClasses = { 'AI Security': 'security', 'AI Safety': 'safety', 'LLM Security': 'security', 'Agentic Systems': 'multimodal', 'Reinforcement Learning': 'audio', 'Software Security': 'privacy' };
-const companyGroups = { 1: 'Big Tech', 2: 'Major AI companies', 3: 'Specialist teams', 4:'Startups & specialist labs' };
+const companyGroups = COMPANY_LABELS;
 const initials = { google: 'G', apple: 'a', microsoft: 'M', amazon: 'a', nvidia: 'N', meta: '∞', openai: 'O', anthropic: 'A', xai: '𝕏', adobe: 'A', dolby: 'D', elevenlabs: 'Ⅱ', scale: 'S' };
 let data = null, records = {}, view = new URLSearchParams(location.search).get('view')==='progress'?'applied':'all', topic = '', roleType = 'Internship', shown = 40, toastTimer, focusedJob = null;
 let lastCheckedAt = null, feedMode = 'live', feedError = false, checking = false;
@@ -53,9 +53,9 @@ function statusOptions(id) { return STAGES.map(s=>`<option value="${s.id}"${reco
 function filtersActive() { return topic || roleType || $('#application-filter').value || $('#search').value || $('#company').value || $('#company-group').value || ['remote', 'new', 'include-archived'].some(id => $(`#${id}`).checked); }
 function updateCompanies() {
   const chosen = $('#company').value, group = $('#company-group').value;
-  const sources = data.sources.filter(s => !group || s.tier === Number(group));
-  $('#company').innerHTML = '<option value="">All companies</option>' + Object.entries(companyGroups).map(([tier, label]) => {
-    const members = sources.filter(s => s.tier === Number(tier));
+  const sources = data.sources.filter(s => !group || companyCategory(s) === group);
+  $('#company').innerHTML = '<option value="">All companies</option>' + Object.entries(companyGroups).map(([category, label]) => {
+    const members = sources.filter(s => companyCategory(s) === category);
     return members.length ? `<optgroup label="${label}">${members.map(s => `<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('')}</optgroup>` : '';
   }).join('');
   $('#company').value = sources.some(s => s.id === chosen) ? chosen : '';
@@ -75,7 +75,7 @@ function filteredJobs(ignoreType = false) {
     if (!ignoreType && !matchesTrack(job, roleType)) return false;
     if ($('#us').checked && !job.us) return false;
     if ($('#company').value && job.sourceId !== $('#company').value) return false;
-    if ($('#company-group').value && job.tier !== Number($('#company-group').value)) return false;
+    if ($('#company-group').value && companyCategory(job) !== $('#company-group').value) return false;
     if (!withinScope(job)) return false;
     if ($('#remote').checked && !job.remote) return false;
     if ($('#new').checked && !isNew(job)) return false;
@@ -95,7 +95,6 @@ function filteredJobs(ignoreType = false) {
 function setRoleType(type) { roleType = type; shown = 40; render(); }
 function updateRoleTabs() {
   const jobs = filteredJobs(true);
-  const employerNote=$('#industry-labs-note');if(employerNote)employerNote.hidden=roleType!=='IndustryLabs';
   document.querySelectorAll('[data-type]').forEach(button => {
     const selected = button.dataset.type === roleType;
     button.classList.toggle('selected', selected);
@@ -110,7 +109,7 @@ function jobCard(job) {
   const type = job.type === 'Unspecified' ? 'Type not specified' : job.type;
   return `<article class="job-card" data-id="${id}">
     <div class="company-logo ${escape(job.sourceId)}" aria-hidden="true">${escape(initials[job.sourceId] || job.company.slice(0, 1))}</div>
-    <div class="job-content"><div class="job-company">${escape(job.company)} <span class="priority-badge">${companyCategory(job)==='big'?'大厂':'小厂 · 公开薪资达标'}</span> ${isNew(job) ? '<span class="new-badge" title="首次收录到雷达，不代表新发布">首次收录</span>' : ''}</div>
+    <div class="job-content"><div class="job-company">${escape(job.company)} <span class="priority-badge">${escape(COMPANY_LABELS[companyCategory(job)])}${companyCategory(job)==='small'?' · 公开薪资达标':''}</span> ${isNew(job) ? '<span class="new-badge" title="首次收录到雷达，不代表新发布">首次收录</span>' : ''}</div>
       <button class="job-title" data-action="details">${escape(job.title)}</button>
       <div class="job-meta"><span class="place" title="${escape(job.location)}">${escape(job.location)}</span><span>${escape(type)}</span><span>${job.postedAt ? `原始发布 ${dateLabel(job.postedAt)}` : '原始发布日期未提供'}</span><span>官网收录核验 ${dateLabel(job.lastSeen)}</span></div>
       <div class="job-tags">${tags(job)}<span class="tag internship" title="${escape(job.degree?.evidence||'')}">${escape(degreeLabel(job))}</span><span class="tag compensation">${escape(payLabel(job))}</span>${!isCurrentOpportunity(job) ? `<span class="tag warning">${escape(postingFreshness(job).label)}</span>` : ''}${job.type === 'Internship' ? '<span class="tag internship">Internship</span>' : ''}${job.status !== 'open' ? `<span class="tag warning">${job.status === 'not-listed' ? 'Not in latest scan' : 'Needs verification'}</span>` : ''}</div>
@@ -142,7 +141,7 @@ function updateStats() {
 }
 function renderSources() {
   const labels = { ok: 'Collected', partial: 'Partial', error: 'Unavailable', manual: 'Manual check' };
-  $('#source-panel').innerHTML = `<p class="source-intro">${data.sources.filter(s => s.status === 'ok').length} of ${data.sources.length} sources collected successfully. All ${data.sources.length} official source channels are collected by the cloud updater on a five-minute schedule, including when this page is closed. This page checks the small feed manifest every thirty seconds and downloads changed data automatically. Scheduler delays and source limits may delay complete results. A source error preserves earlier listings; it does not mean those roles closed. Research roles rank before engineering. Education is separate: postings that only mention bachelor’s/master’s degrees are excluded from opportunities. PhD-required, PhD-preferred, mixed-degree and unspecified postings remain; an unspecified requirement is not a guarantee of eligibility. All internships satisfy the same inclusion rules. Research and Engineering may overlap; their deduplicated union is All. Big and Small companies are independent subsets. Small-company roles require an employer-published USD base-pay lower bound of $55/hour or $10,000/month; undisclosed pay is excluded. No annual-to-hourly conversion is used. The default view is US only, with an option to include other locations. Default results exclude ended internship cohorts, standing adverts older than 180 days without a current/future cohort, talent pools and unverified availability. Original publication and the latest official-board check are distinct dates. Employer search results can miss roles, so these counts do not represent every available job.</p><div class="source-grid">${data.sources.map(s => `<article class="source-card"><header><h2>${escape(s.name)}</h2><span class="source-status ${escape(s.status)}">${labels[s.status] || 'Unknown'}</span></header><p>${s.status === 'manual' ? 'Open the official board to search current US opportunities.' : `${data.jobs.filter(j => j.sourceId === s.id && isCurrentOpportunity(j) && j.type === 'Internship' && withinScope(j) && j.research?.isResearch).length} research internships for PhD consideration · ${data.jobs.filter(j=>j.sourceId===s.id&&j.us&&withinScope(j)&&isCurrentOpportunity(j)).length} matching US roles · ${s.scanned || 0} listings checked`}${s.note ? `<br>${escape(s.note)}` : ''}</p><a href="${safeLink(s.url)}" target="_blank" rel="noopener noreferrer">Open official careers</a><small>Checked: ${timeLabel(s.checkedAt)}<br>Last complete collection: ${timeLabel(s.lastSuccess)}</small></article>`).join('')}</div>`;
+  $('#source-panel').innerHTML = `<p class="source-intro">${data.sources.filter(s => s.status === 'ok').length} of ${data.sources.length} sources collected successfully. All ${data.sources.length} official source channels are collected by the cloud updater on a five-minute schedule, including when this page is closed. This page checks the small feed manifest every thirty seconds and downloads changed data automatically. Scheduler delays and source limits may delay complete results. A source error preserves earlier listings; it does not mean those roles closed. Research roles rank before engineering. Education is separate: postings that only mention bachelor’s/master’s degrees are excluded from opportunities. PhD-required, PhD-preferred, mixed-degree and unspecified postings remain; an unspecified requirement is not a guarantee of eligibility. All internships satisfy the same inclusion rules. Research and Engineering may overlap; their deduplicated union is All. Big, Small and Traditional companies are mutually exclusive primary employer categories; their union equals All. Independent AI labs are grouped under Small. Small-company roles require an employer-published USD base-pay lower bound of $55/hour or $10,000/month; undisclosed pay is excluded. No annual-to-hourly conversion is used. The default view is US only, with an option to include other locations. Default results exclude ended internship cohorts, standing adverts older than 180 days without a current/future cohort, talent pools and unverified availability. Original publication and the latest official-board check are distinct dates. Employer search results can miss roles, so these counts do not represent every available job.</p><div class="source-grid">${data.sources.map(s => `<article class="source-card"><header><h2>${escape(s.name)}</h2><span class="source-status ${escape(s.status)}">${labels[s.status] || 'Unknown'}</span></header><p>${s.status === 'manual' ? 'Open the official board to search current US opportunities.' : `${data.jobs.filter(j => j.sourceId === s.id && isCurrentOpportunity(j) && j.type === 'Internship' && withinScope(j) && j.research?.isResearch).length} research internships for PhD consideration · ${data.jobs.filter(j=>j.sourceId===s.id&&j.us&&withinScope(j)&&isCurrentOpportunity(j)).length} matching US roles · ${s.scanned || 0} listings checked`}${s.note ? `<br>${escape(s.note)}` : ''}</p><a href="${safeLink(s.url)}" target="_blank" rel="noopener noreferrer">Open official careers</a><small>Checked: ${timeLabel(s.checkedAt)}<br>Last complete collection: ${timeLabel(s.lastSuccess)}</small></article>`).join('')}</div>`;
 }
 function render() {
   if (!data && view!=='applied') return;
@@ -190,7 +189,7 @@ async function loadFeed(showToast = false) {
     if (result.snapshot) {
       const oldIDs = data ? new Set(data.jobs.map(j => j.id)) : null;
       data = {...result.snapshot,jobs:result.snapshot.jobs.map(upgradeJob)};
-      $('#source-total-note').textContent=`全部 ${data.sources.length} 个官方来源由 GitHub 自动采集。全部岗位使用同样的方向、学历规则；小厂还须公开薪资下限达到 $55/h 或 $10,000/月；默认排除旧挂岗、已结束批次和待核验岗位。`; 
+      $('#source-total-note').textContent=`全部 ${data.sources.length} 个官方来源由 GitHub 自动采集。大厂、小厂、传统企业三类互不重复，合起来等于全部。全部岗位使用同样的方向、学历规则；小厂（含独立 AI 实验室）还须公开薪资下限达到 $55/h 或 $10,000/月；默认排除旧挂岗、已结束批次和待核验岗位。`; 
       const newJobs = oldIDs ? data.jobs.filter(j => !oldIDs.has(j.id) && j.status === 'open').length : 0;
       updateCompanies(); render();
       if (newJobs) toast(`${newJobs} new ${newJobs === 1 ? 'opportunity' : 'opportunities'} added. Your filters are unchanged.`);
