@@ -25,7 +25,7 @@ export function patchAdapters(text){
   text=replaceRequired(text,'export async function collectSource(source) {',`export async function collectSource(source) {
   const deadline=Date.now()+240000;
   const request=(url,body,headers)=>{if(Date.now()>deadline)throw new Error('Source time budget reached; coverage is partial');return requestOfficial(url,body,headers);};
-  if(['ibm','tiktok','bytedance','workday'].includes(source.adapter))return collectExtendedOfficial(source,{request,pool});
+  if(['ibm','tiktok','bytedance','workday','smartrecruiters','amd'].includes(source.adapter))return collectExtendedOfficial(source,{request,pool});
   if(source.id==='microsoft'&&source.adapter==='eightfold'){const primary=await collectPublicCareers(source,{request,pool});return primary.complete?primary:collectMicrosoftFallback(source,primary,{request,pool,parseMSR});}`,'collector');
   text=replaceRequired(text,'job-board/${source.board}','job-board/${encodeURIComponent(source.board)}?includeCompensation=true','Ashby compensation');
   text=replaceRequired(text,'type: j.employmentType, workplace:','compensation:j.compensation, type: j.employmentType, workplace:','Ashby fields');
@@ -45,6 +45,18 @@ export function parseSupplierJob(j,source){
   const locations=locationChain(j.city_info);
   return {id:j.id,title:j.title,description:j.description+'\n'+j.requirement,location:locations.join(', '),countries:locations.slice(-1),type:j.recruit_type?.en_name||j.recruit_type?.i18n_name,department:j.job_category?.en_name,url:source.adapter==='tiktok'?`https://lifeattiktok.com/search/${j.id}`:`https://joinbytedance.com/search/${j.id}`,expiresAt:j.job_post_info?.expiry_time||null};
 }
+export function parseSmartRecruitersJob(j){
+  const sections=j.jobAd?.sections;
+  if(!j.id||!j.name||!j.postingUrl||!sections?.jobDescription?.text||!sections?.qualifications?.text)throw new Error('SmartRecruiters full qualifications unavailable');
+  return {id:j.id,title:j.name,description:['jobDescription','qualifications','additionalInformation'].map(k=>sections[k]?.text).filter(Boolean).join('\n'),location:j.location?.fullLocation||[j.location?.city,j.location?.region,j.location?.country].filter(Boolean).join(', '),countries:[j.location?.country],type:j.typeOfEmployment?.label,department:j.department?.label,postedAt:j.releasedDate,url:j.postingUrl};
+}
+export function parseAMDJob(j){
+  if(!j.req_id||!j.title||!j.description||!j.country)throw new Error('AMD full qualifications unavailable');
+  const canonical=j.meta_data?.canonical_url;
+  const url=canonical&&new URL(canonical).origin==='https://careers.amd.com'?canonical:`https://careers.amd.com/jobs/${encodeURIComponent(j.req_id)}?lang=en-us`;
+  return {id:j.req_id,title:j.title,description:j.description,location:[j.city,j.state,j.country].filter(Boolean).join(', '),countries:[j.country_code||j.country],type:(j.categories||[]).map(c=>c.name).join('; '),postedAt:j.posted_date,url};
+}
+const internWorkerType=value=>/\bintern(?:ship)?\b/i.test(value||'')&&!/\bnon[- ]intern/i.test(value||'');
 export async function collectExtendedOfficial(source,{request,pool}){
   const jobs=[],issues=[],visited=new Set();let scanned=0;
   try{
@@ -54,8 +66,8 @@ export async function collectExtendedOfficial(source,{request,pool}){
       if(!Array.isArray(initial.jobPostings)||!Number.isFinite(initial.total))throw new Error('Workday search format changed');
       // Workday reports total=0 after page one. Preserve the first total.
       // An official Intern worker-type facet avoids matching "internal" in full-time descriptions.
-      const facet=initial.facets?.find(f=>f.facetParameter==='workerSubType'&&f.values?.some(v=>/^intern(?:ship)?(?:\s|\(|$)/i.test(v.descriptor)));
-      const internTypes=facet?.values.filter(v=>/^intern(?:ship)?(?:\s|\(|$)/i.test(v.descriptor)).map(v=>v.id);
+      const facet=initial.facets?.find(f=>f.facetParameter==='workerSubType'&&f.values?.some(v=>internWorkerType(v.descriptor)));
+      const internTypes=facet?.values.filter(v=>internWorkerType(v.descriptor)).map(v=>v.id);
       const queries=internTypes?.length?['']:['internship','intern'];
       const appliedFacets=internTypes?.length?{[facet.facetParameter]:internTypes}:{};
       const listings=new Map();
@@ -80,6 +92,36 @@ export async function collectExtendedOfficial(source,{request,pool}){
           jobs.push({id:d.jobReqId||j.bulletFields?.[0],title:d.title,location:[d.location,...(d.additionalLocations||[])].filter(Boolean).join('; '),countries:[d.country?.descriptor],description:d.jobDescription,type:`${d.timeType||''} ${d.workerSubType||''}`,postedAt:d.startDate,url:d.externalUrl||`https://${source.host}/en-US/${source.board}${j.externalPath}`});
         }catch(e){issues.push(e.message);}
       });
+    }else if(source.adapter==='smartrecruiters'){
+      const base=`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(source.board)}/postings`;
+      let offset=0,total=Infinity;const listings=new Map();
+      while(offset<total&&offset<20000){
+        const data=await(await request(`${base}?limit=100&offset=${offset}${source.country?'&country='+encodeURIComponent(source.country):''}`)).json();
+        if(!Array.isArray(data.content)||!Number.isInteger(data.totalFound)||data.totalFound<0)throw new Error('SmartRecruiters official search format changed');
+        total=data.totalFound;const ids=data.content.map(j=>j.id).join(',');
+        if((!data.content.length&&offset<total)||(ids&&visited.has(ids)))throw new Error('SmartRecruiters pagination repeated or ended early');visited.add(ids);
+        scanned+=data.content.length;
+        for(const j of data.content){
+          if(!j.id||!j.name)throw new Error('SmartRecruiters returned incomplete listings');
+          if(source.country&&j.location?.country?.toLowerCase()!==source.country.toLowerCase())throw new Error('SmartRecruiters country filter was not applied');
+          if(INTERNSHIP.test(j.name+' '+(j.typeOfEmployment?.label||'')))listings.set(j.id,j);
+        }
+        offset+=data.content.length;
+      }
+      if(offset<total)throw new Error('SmartRecruiters page limit reached; coverage is partial');
+      await pool([...listings.values()],2,async j=>{try{jobs.push(parseSmartRecruitersJob(await(await request(base+'/'+encodeURIComponent(j.id))).json()));}catch(e){issues.push(e.message);}});
+    }else if(source.adapter==='amd'){
+      let page=1,total=Infinity;
+      while(scanned<total&&page<=200){
+        const data=await(await request(`https://careers.amd.com/api/jobs?keywords=intern&limit=100&page=${page}`)).json();
+        if(!Array.isArray(data.jobs)||!Number.isInteger(data.totalCount)||data.totalCount<0)throw new Error('AMD official search format changed');
+        total=data.totalCount;const ids=data.jobs.map(j=>j.data?.req_id).join(',');
+        if((!data.jobs.length&&scanned<total)||(ids&&visited.has(ids)))throw new Error('AMD pagination repeated or ended early');visited.add(ids);
+        scanned+=data.jobs.length;
+        for(const row of data.jobs){const j=row.data;if(!j?.title)throw new Error('AMD returned incomplete listings');if(INTERNSHIP.test(j.title))jobs.push(parseAMDJob(j));}
+        page++;
+      }
+      if(scanned<total)throw new Error('AMD page limit reached; coverage is partial');
     }else if(source.adapter==='ibm'){
       let offset=0,total=Infinity;
       while(offset<total && offset<20000){
