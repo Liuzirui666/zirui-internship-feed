@@ -53,7 +53,7 @@ export function parseSmartRecruitersJob(j){
 export function parseAMDJob(j){
   if(!j.req_id||!j.title||!j.description||!j.country)throw new Error('AMD full qualifications unavailable');
   const canonical=j.meta_data?.canonical_url;
-  const url=canonical&&new URL(canonical).origin==='https://careers.amd.com'?canonical:`https://careers.amd.com/jobs/${encodeURIComponent(j.req_id)}?lang=en-us`;
+  const url=canonical&&new URL(canonical).origin==='https://careers.amd.com'?canonical:`https://careers.amd.com/students/jobs/${encodeURIComponent(j.req_id)}?lang=en-us`;
   return {id:j.req_id,title:j.title,description:j.description,location:[j.city,j.state,j.country].filter(Boolean).join(', '),countries:[j.country_code||j.country],type:(j.categories||[]).map(c=>c.name).join('; '),postedAt:j.posted_date,url};
 }
 const internWorkerType=value=>/\bintern(?:ship)?\b/i.test(value||'')&&!/\bnon[- ]intern/i.test(value||'');
