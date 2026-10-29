@@ -1,4 +1,4 @@
-import { withinScope, companyCategory, matchesTrack, upgradeJob, postingFreshness, isCurrentOpportunity } from './matching.mjs?v=coverage-v6';
+import { withinScope, companyCategory, matchesTrack, upgradeJob, postingFreshness, isCurrentOpportunity } from './matching.mjs?v=industry-labs-v7';
 import { createFeedClient } from './feed-client.js?v=progress-v2';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -95,6 +95,7 @@ function filteredJobs(ignoreType = false) {
 function setRoleType(type) { roleType = type; shown = 40; render(); }
 function updateRoleTabs() {
   const jobs = filteredJobs(true);
+  const employerNote=$('#industry-labs-note');if(employerNote)employerNote.hidden=roleType!=='IndustryLabs';
   document.querySelectorAll('[data-type]').forEach(button => {
     const selected = button.dataset.type === roleType;
     button.classList.toggle('selected', selected);
